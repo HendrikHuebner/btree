@@ -3,11 +3,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
-#include <new>
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <type_traits>
 
 
 template<typename K, typename V, std::size_t N = 4>
@@ -24,6 +22,7 @@ private:
         public:
         Node() {}
 
+        // print DOT representation
         int toString(std::ostringstream& sb, int from, unsigned depth, unsigned height) const {
             int mine = from++;
             sb << "\tstruct" << mine << " [label=\"";
@@ -52,7 +51,7 @@ private:
 
     Node* root = nullptr;
     unsigned height = 0;
-    std::size_t size_ = 0;
+    std::size_t elementCount = 0;
 
     bool findKeyInNode(Node* node, const K& key, std::size_t& idx);
 
@@ -73,23 +72,24 @@ public:
         free_all(root, 1);
     };
 
+    // TODO
     BTree(const BTree &other) = delete;
 
     BTree &operator=(const BTree &other) = delete;
 
     BTree(const BTree &&other) {
         root = other.root;
-        size_ = other.size_;
+        elementCount = other.elementCount;
         height = other.height;
     };
 
     BTree &operator=(const BTree &&other)  {
         root = other.root;
-        size_ = other.size_;
+        elementCount = other.elementCount;
         height = other.height;
     };
 
-    std::size_t size() const { return size_; }
+    std::size_t size() const { return elementCount; }
 
     void insert(const K&, const V&);
 
@@ -105,34 +105,6 @@ public:
 
     const V& at(const K& key) const;
 
-/*
-    class Iterator; // with the general interface of LegacyBidirectionalIterator, with ConstIterator as well
-    std::pair<Iterator, bool> insert(const K&, const V&); // like std::map, rvalue input too
-
-    template<typename ...Args>
-    std::pair<Iterator, bool> emplace(const K&, Args...); // like std::map, rvalue input too
-
-    Iterator try_insert(const K&, const V&); // like std::map, rvalue input too
-
-    template<typename ...Args>
-    Iterator try_emplace(const K&, Args...); // like std::map, rvalue input too
-
-    value_type& operator[](const K&); // basically default ctor try_emplace
-
-    ConstIterator find(const K& key) const; // search
-
-    Iterator find(const K& key);            // update
-
-    std::size_t size() const;
-
-    bool is_empty() const;
-
-    Iterator begin(); // and cbegin()
-
-    Iterator end();
-
-    */
-
     std::string toString() const {
         std::ostringstream sb;
         sb << "digraph {" << std::endl;
@@ -144,6 +116,8 @@ public:
         return sb.str();
     }
 };
+
+/* =========== IMPLEMENTATION =========== */
 
 template<typename K, typename V, std::size_t N>
 static inline void insertNode(auto* node, std::size_t i, auto&& key, auto&& value, auto* child) {
@@ -246,11 +220,11 @@ void BTree<K, V, N>::insert(const K& key, const V& value) {
         root = new Node();
         root->entries[0] = {key, value};
         root->size = 1;
-        size_ = 1;
+        elementCount = 1;
         height = 1;
 
     } else {
-        size_++;
+        elementCount++;
         insert_aux(1, root, key, value);
         
         if (root->size > N) {
@@ -266,11 +240,11 @@ void BTree<K, V, N>::insert(K&& key, V&& value) {
         root->entries[0].first = std::move(key);
         root->entries[0].second = std::move(value);
         root->size = 1;
-        size_ = 1;
+        elementCount = 1;
         height = 1;
 
     } else {
-        size_++;
+        elementCount++;
         insert_aux(1, root, std::move(key), std::move(value));
         
         if (root->size > N) {
@@ -302,7 +276,7 @@ void BTree<K, V, N>::insert_aux(unsigned depth, Node* node, auto&& key, auto&& v
     if (findKeyInNode(node, key, idx)) {
         // key already exists -> update value but keep size the same
         node->entries[idx].second = std::move(value);
-        size_--;
+        elementCount--;
         return;
     }
 
@@ -493,13 +467,13 @@ bool BTree<K, V, N>::erase(const K& key) {
     
     if (height == 1 && root->size == 1 && root->entries[0].first == key) {
         height = 0;
-        size_ = 0;
+        elementCount = 0;
         delete root;
         root = nullptr;
         return true;
     }
 
-    size_--;
+    elementCount--;
     bool retval = erase_aux(1, root, key);
 
     // check if height needs to shrink
@@ -528,7 +502,7 @@ void BTree<K, V, N>::free_all(Node* node, unsigned depth) {
 template<typename K, typename V, std::size_t N>
 void BTree<K, V, N>:: erase_all() {
     free_all(root, 1);
-    size_ = 0;
+    elementCount = 0;
     height = 0;
     root = nullptr;
 }
