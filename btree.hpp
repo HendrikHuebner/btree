@@ -519,9 +519,9 @@ bool BTree<K, V, N>::erase(const K& key) {
 template<typename K, typename V, std::size_t N>
 void BTree<K, V, N>::free_all(Node* node, unsigned depth) {
     if (depth < height) {
-        for (Node* child : node->children) {
-            free_all(child, depth + 1);
-            delete child;
+        for (std::size_t i = 0; i <= node->size; i++) {
+            Node* child = node->children[i];
+            freeNodes(child, depth + 1);
         }
     }
 
