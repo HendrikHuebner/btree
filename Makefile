@@ -4,7 +4,7 @@ CXXFLAGS = -std=c++20 -Wall -Wextra -pedantic -g3 -O0 -fsanitize=address
 TARGET = main
 
 SRC = main.cpp
-HEADERS = btree.hpp
+HEADERS = btree.hpp bplustree.hpp
 
 OBJ = $(SRC:.cpp=.o)
 
