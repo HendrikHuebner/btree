@@ -341,6 +341,8 @@ public:
 
     void insert(const K&, V&&);
 
+    void insert(const std::pair<K, V>& entry) { insert(entry.first, entry.second); }
+
     bool erase(const K&);
 
     bool erase_aux(unsigned depth, Node* node, const K& key);

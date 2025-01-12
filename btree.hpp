@@ -63,7 +63,7 @@ private:
 
     void insert_aux(unsigned depth, Node* node, auto&& key, auto&& value);
 
-    V& find_aux(Node* node, const K& key, unsigned depth) const;
+    V* find_aux(Node* node, const K& key, unsigned depth) const;
 
     void free_all(Node* node, unsigned depth);
 
@@ -94,7 +94,7 @@ public:
 
     void insert(const K&, const V&);
 
-    void insert(K&&, V&&);
+    void insert(const std::pair<K, V>& entry) { insert(entry.first, entry.second); }
 
     bool erase(const K&);
 
@@ -105,6 +105,8 @@ public:
     V& at(const K& key);
 
     const V& at(const K& key) const;
+
+    bool contains(const K& key) const;
 
     std::string toString() const {
         std::ostringstream sb;
@@ -154,11 +156,11 @@ bool BTree<K, V, N>::findKeyInNode(Node* node, const K& key, std::size_t& idx) {
     if constexpr (N < 10) {
         // linear search
         for(idx = node->size; idx > 0; idx--) {
-            if(key == node->keys[idx - 1]) {
+            if(key == node->entries[idx - 1].first) {
                 return true;
             }
 
-            if(key > node->keys[idx - 1]) {
+            if(key > node->entries[idx - 1].first) {
                 break;
             }
         }
@@ -171,12 +173,12 @@ bool BTree<K, V, N>::findKeyInNode(Node* node, const K& key, std::size_t& idx) {
         while (start < end) {
             std::size_t pivot = start + (end - start) / 2;
 
-            if (node->keys[pivot] == key) {
+            if (node->entries[pivot].first == key) {
                 idx = pivot;
                 return true;
             }
 
-            else if (node->keys[pivot] < key) {
+            else if (node->entries[pivot].first < key) {
                 start = pivot + 1;
             } else {
                 end = pivot;
@@ -278,27 +280,6 @@ void BTree<K, V, N>::insert(const K& key, const V& value) {
 }
 
 template<typename K, typename V, std::size_t N>
-void BTree<K, V, N>::insert(K&& key, V&& value) {
-    if(!root) {
-        root = new Node();
-        root->entries[0].first = std::move(key);
-        root->entries[0].second = std::move(value);
-        root->size = 1;
-        elementCount = 1;
-        height = 1;
-
-    } else {
-        elementCount++;
-        insert_aux(1, root, std::move(key), std::move(value));
-        
-        if (root->size > N) {
-            splitRoot(root);
-        }
-    }
-}
-
-
-template<typename K, typename V, std::size_t N>
 void BTree<K, V, N>::insert_aux(unsigned depth, Node* node, auto&& key, auto&& value) {
 
     std::size_t idx;
@@ -332,7 +313,12 @@ const V& BTree<K, V, N>::at(const K& key) const {
     if (!root)
         return false;
 
-    return find_aux(root, key, 1);
+    const V* value = find_aux(root, key, 1);
+
+    if (value)
+        return *value;
+    else
+        throw std::out_of_range("key");
 }
 
 template<typename K, typename V, std::size_t N>
@@ -340,22 +326,35 @@ V& BTree<K, V, N>::at(const K& key) {
     if (!root)
         throw std::out_of_range("key");
 
-    return find_aux(root, key, 1);
+    const V* value = find_aux(root, key, 1);
+
+    if (value)
+        return *value;
+    else
+        throw std::out_of_range("key");
 }
 
 template<typename K, typename V, std::size_t N>
-V& BTree<K, V, N>::find_aux(Node* node, const K& key, unsigned depth) const {
+bool BTree<K, V, N>::contains(const K& key) const {
+    if (!root)
+        return false;
+
+    return find_aux(root, key, 1) != nullptr;
+}
+
+template<typename K, typename V, std::size_t N>
+V* BTree<K, V, N>::find_aux(Node* node, const K& key, unsigned depth) const {
     bool isInnerNode = depth < height;
 
     for(int i = node->size - 1; i >= 0; i--) {
         if(key == node->entries[i].first) 
-            return node->entries[i].second;
+            return &node->entries[i].second;
 
         if(key > node->entries[i].first) {
             if (isInnerNode) {
                 return find_aux(node->children[i + 1], key, depth + 1);
             } else {
-                throw std::out_of_range("key");
+                return nullptr;
             }
         }
     }
@@ -363,7 +362,7 @@ V& BTree<K, V, N>::find_aux(Node* node, const K& key, unsigned depth) const {
     if (isInnerNode) {
         return find_aux(node->children[0], key, depth + 1);
     } else {
-        throw std::out_of_range("key");
+        return nullptr;
     }
 }
 
@@ -521,7 +520,7 @@ void BTree<K, V, N>::free_all(Node* node, unsigned depth) {
     if (depth < height) {
         for (std::size_t i = 0; i <= node->size; i++) {
             Node* child = node->children[i];
-            freeNodes(child, depth + 1);
+            free_all(child, depth + 1);
         }
     }
 

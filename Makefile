@@ -1,9 +1,9 @@
 CXX = g++
-CXXFLAGS = -std=c++20 -Wall -Wextra -pedantic -g3 -O0 -fsanitize=address
+CXXFLAGS = -std=c++20 -Wall -Wextra -pedantic -O3 -march=native -fsanitize=address
 
-TARGET = main
+TARGET = bench
 
-SRC = main.cpp
+SRC = bench.cpp
 HEADERS = btree.hpp bplustree.hpp
 
 OBJ = $(SRC:.cpp=.o)
