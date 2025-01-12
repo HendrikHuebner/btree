@@ -5,7 +5,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <stdexcept>
-#include <iostream>
 
 
 template<typename K, typename V, std::size_t N = 4>
@@ -477,7 +476,7 @@ void BPlusTree<K, V, N>::removeKeyFromValueNode(Node* node, std::size_t i, bool 
             }
         }
     
-        nodeAllocator.deallocate(std::move(value));
+        nodeAllocator.deallocate(value);
     }
  
     // shuffle nodes
@@ -503,14 +502,14 @@ void BPlusTree<K, V, N>::splitRoot(Node* node, bool isLeaf) {
 
         for(std::size_t k = 0; k < splitIndex; k++) {
             left->keys[k] = std::move(node->keys[k]);
-            left->values[k] = std::move(node->values[k]);
+            left->values[k] = node->values[k];
             right->keys[k] = std::move(node->keys[k + splitIndex]);
-            right->values[k] = std::move(node->values[k + splitIndex]);
+            right->values[k] = node->values[k + splitIndex];
         }
 
         if constexpr (N % 2 == 0) {
             right->keys[splitIndex] = std::move(node->keys[N]);
-            right->values[splitIndex] = std::move(node->values[N]);
+            right->values[splitIndex] = node->values[N];
             right->size = splitIndex + 1;
         }
 
