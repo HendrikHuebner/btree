@@ -149,6 +149,49 @@ static inline void removeKeyFromNode(auto* node, std::size_t i) {
 }
 
 template<typename K, typename V, std::size_t N>
+bool BTree<K, V, N>::findKeyInNode(Node* node, const K& key, std::size_t& idx) {
+
+    if constexpr (N < 10) {
+        // linear search
+        for(idx = node->size; idx > 0; idx--) {
+            if(key == node->keys[idx - 1]) {
+                return true;
+            }
+
+            if(key > node->keys[idx - 1]) {
+                break;
+            }
+        }
+
+    } else {
+        // binary search
+        std::size_t start = 0;
+        std::size_t end = node->size;
+
+        while (start < end) {
+            std::size_t pivot = start + (end - start) / 2;
+
+            if (node->keys[pivot] == key) {
+                idx = pivot;
+                return true;
+            }
+
+            else if (node->keys[pivot] < key) {
+                start = pivot + 1;
+            } else {
+                end = pivot;
+            }
+        }
+
+        idx = start;
+    }
+
+    return false;
+
+    
+}
+
+template<typename K, typename V, std::size_t N>
 void BTree<K, V, N>::splitRoot(Node* node) {
     constexpr std::size_t splitIndex = N / 2;
 
@@ -254,21 +297,6 @@ void BTree<K, V, N>::insert(K&& key, V&& value) {
     }
 }
 
-template<typename K, typename V, std::size_t N>
-bool BTree<K, V, N>::findKeyInNode(Node* node, const K& key, std::size_t& idx) {
-    for(idx = node->size; idx > 0; idx--) {
-        if(key == node->entries[idx - 1].first) {
-            idx--;
-            return true;
-        }
-
-        if(key > node->entries[idx - 1].first) {
-            break;
-        }
-    }
-
-    return false;
-}
 
 template<typename K, typename V, std::size_t N>
 void BTree<K, V, N>::insert_aux(unsigned depth, Node* node, auto&& key, auto&& value) {
