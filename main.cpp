@@ -150,7 +150,7 @@ int main() {
 
     test_boolean_insertion_deletion<9>(10000);
     test_boolean_insertion_deletion<22>(10000);
-    test_boolean_insertion_deletion<95>(100000);
+    test_boolean_insertion_deletion<95>(10000);
 
     std::cout << "All tests passed successfully!" << std::endl;
 

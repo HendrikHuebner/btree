@@ -73,21 +73,38 @@ private:
 
     class NodePool {
     public:
+        struct PoolSegment {
+            ValueNode* nodes;
+            size_t size;
+            PoolSegment* next;
+
+            PoolSegment(size_t segmentSize) : size(segmentSize), next(nullptr) {
+                nodes = new ValueNode[segmentSize];
+            }
+
+            ~PoolSegment() {
+                delete[] nodes;
+            }
+        };
+
         size_t capacity;
         size_t allocated;
-        ValueNode* pool;
+        PoolSegment* segments;
         ValueNode* freeList;
 
         explicit NodePool(size_t initialCapacity) {
             capacity = initialCapacity;
-            pool = nullptr;
-            freeList = nullptr;
             allocated = 0;
+            segments = new PoolSegment(initialCapacity);
             reset();
         }
 
         ~NodePool() {
-            delete[] pool;
+            while (segments) {
+                PoolSegment* nextSegment = segments->next;
+                delete segments;
+                segments = nextSegment;
+            }
         }
 
         NodePool(const NodePool&) = delete;
@@ -95,52 +112,49 @@ private:
 
         NodePool(NodePool&& other) noexcept {
             capacity = other.capacity;
-            pool = other.pool;
-            freeList = other.freeList;
             allocated = other.allocated;
+            segments = other.segments;
+            freeList = other.freeList;
+            other.segments = nullptr;
+            other.freeList = nullptr;
         }
 
         NodePool& operator=(NodePool&& other) noexcept {
             if (this != &other) {
-                delete[] pool;
+                while (segments) {
+                    PoolSegment* nextSegment = segments->next;
+                    delete segments;
+                    segments = nextSegment;
+                }
+
                 capacity = other.capacity;
-                pool = other.pool;
-                freeList = other.freeList;
                 allocated = other.allocated;
+                segments = other.segments;
+                freeList = other.freeList;
+
+                other.segments = nullptr;
+                other.freeList = nullptr;
             }
             return *this;
         }
 
         ValueNode* allocate() {
             if (!freeList) {
-                size_t newCapacity = capacity * 2;
-                ValueNode* newPool = new ValueNode[newCapacity];
-
-                for (size_t i = 0; i < newCapacity; i++) {
-                    newPool[i].next = freeList;
-                    freeList = &newPool[i];
-                }
-
-                for (size_t i = 0; i < capacity; i++) {
-                    newPool[i] = pool[i];
-                }
-                delete[] pool;
-                pool = newPool;
-                capacity = newCapacity;
+                expand();
             }
 
             ValueNode* node = freeList;
-            node->prev = nullptr;
-            node->next = nullptr;
-
             freeList = freeList->next;
             allocated++;
+            node->prev = nullptr;
+            node->next = nullptr;
             return node;
         }
 
-        ValueNode* allocate(auto&& value) {
+        template <typename Value>
+        ValueNode* allocate(Value&& value) {
             ValueNode* node = allocate();
-            node->value = std::forward<decltype(value)>(value);
+            node->value = std::forward<Value>(value);
             return node;
         }
 
@@ -154,15 +168,31 @@ private:
         }
 
         void reset() {
-            freeList = nullptr;
-            for (size_t i = 0; i < capacity; i++) {
-                pool[i].next = freeList;
-                freeList = &pool[i];
-            }
             allocated = 0;
+            freeList = nullptr;
+
+            for (PoolSegment* segment = segments; segment != nullptr; segment = segment->next) {
+                for (size_t i = 0; i < segment->size; i++) {
+                    segment->nodes[i].next = freeList;
+                    freeList = &segment->nodes[i];
+                }
+            }
+        }
+
+    private:
+        void expand() {
+            size_t newSegmentSize = capacity * 2;
+            PoolSegment* newSegment = new PoolSegment(newSegmentSize);
+            for (size_t i = 0; i < newSegmentSize; i++) {
+                newSegment->nodes[i].next = freeList;
+                freeList = &newSegment->nodes[i];
+            }
+
+            capacity += newSegmentSize;
+            newSegment->next = segments;
+            segments = newSegment;
         }
     };
-
     class Iterator {
     private:
         ValueNode* current;
@@ -220,7 +250,7 @@ private:
     void split(Node* parent, std::size_t idx, bool  childIsLeaf);
 
     void insert_aux(unsigned depth, Node* node, const K& key, const V& value);
-    
+
     V& find_aux(Node* node, const K& key, unsigned depth) const;
 
 public:
@@ -635,10 +665,6 @@ bool BPlusTree<K, V, N>::erase_aux(unsigned depth, Node* node, const K& key) {
     bool isLeaf = depth >= height;
     bool childIsLeaf = depth + 1 >= height;
     bool found = findKeyInNode(node, key, idx);
-
-    if (key == 96) {
-        printf("asfhsrghrsghj");
-    }
     
     if (isLeaf) {
         if (found) {
@@ -649,8 +675,8 @@ bool BPlusTree<K, V, N>::erase_aux(unsigned depth, Node* node, const K& key) {
         } else {
             // nothing to do
             return false;
-    }
         }
+    }
 
     bool retval;
     Node* child;
@@ -677,18 +703,20 @@ bool BPlusTree<K, V, N>::erase_aux(unsigned depth, Node* node, const K& key) {
             // rare special case
             if (childIsLeaf && nextSmallest->size == 1 && idx > 0) {
                 removeKeyFromValueNode(nextLargest, 0);
-                
+
                 for (std::size_t i = idx; i < node->size - 1; i++) {
                     node->keys[i] = node->keys[i + 1];
                     node->children[i + 1] = node->children[i + 2];
                 }
-
+                
                 node->size--;
                 for (std::size_t i = 0; i < nextLargest->size; i++) {
                     node->children[idx]->keys[1 + i] = nextLargest->keys[i];
                     node->children[idx]->values[1 + i] = nextLargest->values[i];
                     node->children[idx]->size++;
                 }
+
+                delete nextLargest;
 
                 return true;
             }
