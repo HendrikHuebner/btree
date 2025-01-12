@@ -1,3 +1,5 @@
+#pragma once
+
 #include <cassert>
 #include <cstddef>
 #include <cstdlib>
@@ -72,7 +74,6 @@ public:
         free_all(root, 1);
     };
 
-    // TODO
     BTree(const BTree &other) = delete;
 
     BTree &operator=(const BTree &other) = delete;

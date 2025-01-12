@@ -1,11 +1,10 @@
+#pragma once
+
 #include <cassert>
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
-#include <iostream>
-#include <sstream>
 #include <stdexcept>
-#include <string>
 
 
 template<typename K, typename V, std::size_t N = 4>
@@ -14,7 +13,6 @@ class BPlusTree {
 static_assert(N > 2, "N must be greater than 2");
 
 private:
-
     struct ValueNode {
         ValueNode* next = nullptr;
         ValueNode* prev = nullptr;
@@ -32,42 +30,6 @@ private:
 
         public:
         Node() {}
-
-        int toString(std::ostringstream& sb, int from, unsigned depth, unsigned height) const {
-            int mine = from++;
-            sb << "\tstruct" << mine << " [label=\"";
-            for (size_t i = 0; i < 2 * size + 1; i++) {
-                if (i > 0) {
-                    sb << "|";
-                }
-                sb << "<f" << i << "> ";
-                if ((i & 1) == 1) {
-                    sb << keys[i / 2];
-                }
-            }
-            sb << "\"];" << std::endl;
-
-            for (size_t i = 0; i < size; i++) {
-                int field = 2 * i;
-                
-                sb << "\tstruct" << mine << ":<f" << field << "> -> struct" << from << ";" << std::endl;
-
-                if (depth >= height) {
-                    sb << "\tstruct" << from << " [label=\"Value: " << values[i]->value << "\"];" << std::endl;
-                    from++;
-
-                } else {
-                    from = children[i]->toString(sb, from, depth + 1, height);
-                }
-            }
-
-            if (depth < height) {
-                sb << "\tstruct" << mine << ":<f" << 2 * size << "> -> struct" << from << ";" << std::endl;
-                from = children[size]->toString(sb, from, depth + 1, height);
-            }
-            
-            return from;           
-        }
     };
 
     class NodePool {
@@ -116,6 +78,8 @@ private:
             freeList = other.freeList;
             other.segments = nullptr;
             other.freeList = nullptr;
+            other.capacity = 0;
+            other.allocated = 0;
         }
 
         NodePool& operator=(NodePool&& other) noexcept {
@@ -133,6 +97,8 @@ private:
 
                 other.segments = nullptr;
                 other.freeList = nullptr;
+                other.capacity = 0;
+                other.allocated = 0;
             }
             return *this;
         }
@@ -242,7 +208,6 @@ private:
         bool operator!=(const BPlusTreeIterator& other) const { return current != other.current; }
     };
 
-
     class ConstBPlusTreeIterator {
     private:
         const ValueNode* current;
@@ -299,6 +264,10 @@ private:
     unsigned height = 0;
     std::size_t elementCount = 0;
 
+    /**
+     * Searches keys of node. If key is found return index of right child of the key. 
+     * Otherwise return index of the right child of the first key greater than the target. 
+     */
     bool findKeyInNode(Node* node, const K& key, std::size_t& idx) const;
     
     void insertValue(Node* node, std::size_t idx, auto&& key, auto* value, bool reorderLinks = true);
@@ -313,7 +282,7 @@ private:
 
     void split(Node* parent, std::size_t idx, bool  childIsLeaf);
 
-    void insert_aux(unsigned depth, Node* node, const K& key, const V& value);
+    void insert_aux(unsigned depth, Node* node, const K& key, auto&& value);
 
     BPlusTreeIterator find_aux(Node* node, const K& key, unsigned depth);
 
@@ -322,7 +291,40 @@ private:
     void free_all(Node* node, unsigned depth);
 
 public:
-    BPlusTree() :  nodePool(256), root(nullptr) {};
+    BPlusTree() : nodePool(256), root(nullptr) {};
+
+    BPlusTree(BPlusTree&& other) :
+        nodePool(std::move(other.nodePool)),
+        root(other.root),
+        valuesBegin(other.valuesBegin),
+        valuesEnd(other.valuesEnd),
+        height(other.height),
+        elementCount(other.elementCount) {
+
+        other.root = nullptr;
+        other.valuesBegin = nullptr;
+        other.valuesEnd = nullptr;
+        other.elementCount = 0;
+        other.height = 0;
+    };
+
+    BPlusTree& operator=(BPlusTree&& other) {
+        nodePool = std::move(other.nodePool);
+        root = other.root;
+        valuesBegin = other.valuesBegin;
+        valuesEnd = other.valuesEnd;
+        height = other.height;
+        elementCount = other.elementCount;
+
+        other.root = nullptr;
+        other.valuesBegin = nullptr;
+        other.valuesEnd = nullptr;
+        other.elementCount = 0;
+        other.height = 0;
+    };
+
+    BPlusTree(const BPlusTree&) = delete;
+    BPlusTree& operator=(const BPlusTree&) = delete;
 
     std::size_t size() const { return elementCount; }
 
@@ -346,35 +348,25 @@ public:
 
     ConstBPlusTreeIterator find(const K& key) const;
 
-    bool contains(const K& key) const;
+    bool contains(const K& key) const noexcept;
 
-    BPlusTreeIterator begin() { return BPlusTreeIterator(valuesBegin, true); }
+    BPlusTreeIterator begin() noexcept { return BPlusTreeIterator(valuesBegin, true); }
+    ConstBPlusTreeIterator begin() const noexcept { return cbegin(); }
+    BPlusTreeIterator end() noexcept { return BPlusTreeIterator(nullptr, true); }
+    ConstBPlusTreeIterator end() const noexcept { return cend(); }
+    BPlusTreeIterator rbegin() noexcept { return BPlusTreeIterator(valuesEnd, false); }
+    ConstBPlusTreeIterator rbegin() const noexcept { return crbegin(); }
+    BPlusTreeIterator rend() noexcept { return BPlusTreeIterator(nullptr, false); }
+    ConstBPlusTreeIterator rend() const noexcept { return crend(); }
 
-    BPlusTreeIterator end() { return BPlusTreeIterator(nullptr, true); }
-
-    BPlusTreeIterator rbegin() { return BPlusTreeIterator(valuesEnd, false); }
-
-    BPlusTreeIterator rend() { return BPlusTreeIterator(nullptr, false); }
-
-    ConstBPlusTreeIterator cbegin() const { return ConstBPlusTreeIterator(valuesBegin, true); }
-
-    ConstBPlusTreeIterator cend() const { return ConstBPlusTreeIterator(nullptr, true); }
-
-    ConstBPlusTreeIterator crbegin() const { return ConstBPlusTreeIterator(valuesEnd, false); }
-
-    ConstBPlusTreeIterator crend() const { return ConstBPlusTreeIterator(nullptr, false); }
-
-    std::string toString() const {
-        std::ostringstream sb;
-        sb << "digraph {" << std::endl;
-        sb << "\tnode [shape=record];" << std::endl;
-        if (root != nullptr) {
-            root->toString(sb, 0, 1, height);
-        }
-        sb << "}";
-        return sb.str();
-    }
+    ConstBPlusTreeIterator cbegin() const noexcept { return ConstBPlusTreeIterator(valuesBegin, true); }
+    ConstBPlusTreeIterator cend() const noexcept { return ConstBPlusTreeIterator(nullptr, true); }
+    ConstBPlusTreeIterator crbegin() const noexcept { return ConstBPlusTreeIterator(valuesEnd, false); }
+    ConstBPlusTreeIterator crend() const noexcept { return ConstBPlusTreeIterator(nullptr, false); }
 };
+
+/* =========== IMPLEMENTATION =========== */
+
 
 template<typename K, typename V, std::size_t N>
 void BPlusTree<K, V, N>::insertNode(Node* node, std::size_t i, auto&& key, auto* child) {    
@@ -459,13 +451,13 @@ void BPlusTree<K, V, N>::removeKeyFromValueNode(Node* node, std::size_t i, bool 
                 value->next->prev = value->prev;
 
             } else {
-                //assert(value == valuesBegin);
+                assert(value == valuesBegin);
 
                 valuesBegin = value->next;
                 valuesBegin->prev = nullptr;
             }
         } else {
-            //assert(value == valuesEnd);
+            assert(value == valuesEnd);
             
             if (value->prev) {
                 valuesEnd = value->prev;
@@ -650,27 +642,49 @@ void BPlusTree<K, V, N>::insert(const K& key, V&& value) {
     }
 }
 
-/*
- * Searches keys of node. If key is found return index of right child of the key. 
- * Otherwise return index of the right child of the first key greater than the target. 
- */
 template<typename K, typename V, std::size_t N>
 bool BPlusTree<K, V, N>::findKeyInNode(Node* node, const K& key, std::size_t& idx) const {
-    for(idx = node->size; idx > 0; idx--) {
-        if(key == node->keys[idx - 1]) {
-            return true;
+
+    if constexpr (N < 10) {
+        // linear search
+        for(idx = node->size; idx > 0; idx--) {
+            if(key == node->keys[idx - 1]) {
+                return true;
+            }
+
+            if(key > node->keys[idx - 1]) {
+                break;
+            }
         }
 
-        if(key > node->keys[idx - 1]) {
-            break;
+    } else {
+        // binary search
+        std::size_t start = 0;
+        std::size_t end = node->size;
+
+        while (start < end) {
+            std::size_t pivot = start + (end - start) / 2;
+
+            if (node->keys[pivot] == key) {
+                idx = pivot + 1;
+                return true;
+            }
+
+            else if (node->keys[pivot] < key) {
+                start = pivot + 1;
+            } else {
+                end = pivot;
+            }
         }
+
+        idx = start;
     }
 
     return false;
 }
 
 template<typename K, typename V, std::size_t N>
-void BPlusTree<K, V, N>::insert_aux(unsigned depth, Node* node, const K& key, const V& value) {
+void BPlusTree<K, V, N>::insert_aux(unsigned depth, Node* node, const K& key, auto&& value) {
     bool isLeaf = depth >= height;
 
     std::size_t idx;
@@ -685,7 +699,7 @@ void BPlusTree<K, V, N>::insert_aux(unsigned depth, Node* node, const K& key, co
             elementCount--;
 
         } else {
-            insertValue(node, idx, std::move(key), nodePool.allocate(std::move(value)));  
+            insertValue(node, idx, key, nodePool.allocate(std::move(value)));  
         }
 
     } else {
@@ -699,12 +713,11 @@ void BPlusTree<K, V, N>::insert_aux(unsigned depth, Node* node, const K& key, co
     assert(node->size <= N + 1);
 }
 
-
 template<typename K, typename V, std::size_t N>
 const V& BPlusTree<K, V, N>::at(const K& key) const {
-    BPlusTreeIterator it = find(key);
+    ConstBPlusTreeIterator it = find(key);
 
-    if (it == end())
+    if (it == cend())
         throw std::out_of_range("key not found");
 
     return *it;
@@ -721,7 +734,7 @@ V& BPlusTree<K, V, N>::at(const K& key) {
 }
 
 template<typename K, typename V, std::size_t N>
-bool BPlusTree<K, V, N>::contains(const K& key) const {
+bool BPlusTree<K, V, N>::contains(const K& key) const noexcept {
     if (!root)
         return false;
     

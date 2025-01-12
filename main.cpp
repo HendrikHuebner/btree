@@ -119,16 +119,14 @@ struct CopyCounter {
         ++copyCount;
     }
 
-    CopyCounter& operator=(const CopyCounter&&) {
+    CopyCounter& operator=(const CopyCounter&) {
         ++copyCount;
         return *this;
     }
 
-    CopyCounter(CopyCounter&&) {}
+    CopyCounter(CopyCounter&&) noexcept {}
 
-    CopyCounter& operator=(CopyCounter&&) {
-        return *this;
-    }
+    CopyCounter& operator=(CopyCounter&&) noexcept { return *this; }
 
     static void reset() {
         copyCount = 0;
@@ -139,6 +137,7 @@ size_t CopyCounter::copyCount = 0;
 
 template<std::size_t N>
 void test_copy_counter(int testRange) {
+
     BPlusTree<int, CopyCounter, N> tree;
     std::unordered_set<int> keys;
 
@@ -147,7 +146,7 @@ void test_copy_counter(int testRange) {
     for (int i = 0; i < testRange; ++i) {
         int key = std::rand() % (10 * testRange);
         keys.insert(key);
-        tree.insert(key, CopyCounter{});
+        tree.insert(key, std::move(CopyCounter{}));
     }
 
     assert(tree.size() == keys.size());
@@ -162,11 +161,119 @@ void test_copy_counter(int testRange) {
 
     assert(tree.size() == 0);
     assert(CopyCounter::copyCount == 0 && "CopyCounter was copied during insertion or deletion!");
+    
+    CopyCounter c;
+    tree.insert(111, c);
+
+    assert(tree.size() == 1);
+    assert(CopyCounter::copyCount == 1 && "CopyCounter was not copied!");
+}
+template<std::size_t N>
+void test_at_and_find(int testRange) {
+    BPlusTree<int, int, N> tree;
+    std::unordered_map<int, int> keys;
+
+    // Insert elements into the tree
+    for (int i = 0; i < testRange; ++i) {
+        int key = std::rand() % (10 * testRange);
+        keys[key] = key;
+        tree.insert(key, key);
+    }
+
+    // Test non-const at()
+    for (const auto& key : keys) {
+        assert(tree.at(key.first) == key.second);
+    }
+
+    // Test const at()
+    const BPlusTree<int, int, N>& constTree = tree;
+    for (const auto& key : keys) {
+        assert(constTree.at(key.first) == key.second);
+    }
+
+    // Test find() non-const
+    for (const auto& key : keys) {
+        auto it = tree.find(key.first);
+        assert(it != tree.end());
+        assert(*it == key.second);
+    }
+
+    // Test find() const
+    for (const auto& key : keys) {
+        auto it = constTree.find(key.first);
+        assert(it != constTree.end());
+        assert(*it == key.second);
+    }
+
+    // Test contains()
+    for (const auto& key : keys) {
+        assert(tree.contains(key.first));
+        assert(constTree.contains(key.first));
+    }
+
+    // Test contains() for a non-existing key
+    assert(!tree.contains(-1));
+    assert(!constTree.contains(-1));
+}
+
+template<std::size_t N>
+void test_const_at_and_find(int testRange) {
+    BPlusTree<int, int, N> tree;
+    std::unordered_map<int, int> keys;
+
+    // Insert elements into the tree
+    for (int i = 0; i < testRange; ++i) {
+        int key = std::rand() % (10 * testRange);
+        keys[key] = key;
+        tree.insert(key, key);
+    }
+
+    // Test const at()
+    const BPlusTree<int, int, N>& constTree = tree;
+    for (const auto& key : keys) {
+        assert(constTree.at(key.first) == key.second);
+    }
+
+    // Test const find()
+    for (const auto& key : keys) {
+        auto it = constTree.find(key.first);
+        assert(it != constTree.end());
+        assert(*it == key.second);
+    }
+}
+
+template<std::size_t N>
+void test_constness_of_find(int testRange) {
+    BPlusTree<int, int, N> tree;
+    std::unordered_map<int, int> keys;
+
+    // Insert elements into the tree
+    for (int i = 0; i < testRange; ++i) {
+        int key = std::rand() % (10 * testRange);
+        keys[key] = key;
+        tree.insert(key, key);
+    }
+
+    // Test const find with const object
+    const BPlusTree<int, int, N>& constTree = tree;
+    for (const auto& key : keys) {
+        auto it = constTree.find(key.first);
+        assert(it != constTree.end());
+        assert(*it == key.second);
+    }
+
+    // Test non-const find
+    for (const auto& key : keys) {
+        auto it = tree.find(key.first);
+        assert(it != tree.end());
+        assert(*it == key.second);
+    }
 }
 
 int main() {
-    std::srand(929);
+    std::srand(420);
 
+    // Existing tests
     test_boolean_insertion_deletion<3>(100);
     test_string_insertion_deletion<3>(100);
     test_int_insertion_deletion<3>(100);
@@ -188,6 +295,10 @@ int main() {
 
     test_copy_counter<4>(100);
     test_copy_counter<5>(100);
+
+    test_at_and_find<4>(100);
+    test_const_at_and_find<4>(100);
+    test_constness_of_find<4>(100);
 
     std::cout << "All tests passed successfully!" << std::endl;
     return 0;
