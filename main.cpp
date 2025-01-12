@@ -1,158 +1,194 @@
+#include <algorithm>
 #include <iostream>
 #include <cassert>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 #include "bplustree.hpp"
-
-#define SEED 929
 
 template<std::size_t N>
 void test_boolean_insertion_deletion(int testRange) {
     BPlusTree<int, bool, N> tree;
-
     std::unordered_map<int, bool> keys;
 
-    std::cout << "Testing boolean insertion and deletion with N = " << N << "\n";
-
-    // Insert random boolean values
     for (int i = 0; i < testRange; ++i) {
         int key = std::rand() % (10 * testRange);
         keys[key] = i % 2 == 0;
-        tree.insert(key, i % 2 == 0); // Alternate true/false
-        std::cout << "Inserted key: " << key << " with value: " << (i % 2 == 0) << std::endl;
-            assert(tree.size() == keys.size());
-
+        tree.insert(key, i % 2 == 0);
+        assert(tree.size() == keys.size());
     }
 
-    // Verify the size of the tree
-
-    // Validate inserted values
     for (const auto& key : keys) {
         bool expectedValue = key.second;
         assert(tree.at(key.first) == expectedValue);
     }
-    std::cout << "All inserted boolean values are correct.\n";
 
-    // Delete all keys and ensure the tree is empty
     for (const auto& key : keys) {
         assert(tree.erase(key.first));
-        std::cout << "Deleted key: " << key.first << "\n";
     }
 
-    // Verify the size of the tree
     assert(tree.size() == 0);
-    std::cout << "Tree size after deletion: " << tree.size() << "\n";
 }
 
-
-
 template<std::size_t N>
-void test_int_insertion_deletion() {
+void test_int_insertion_deletion(int testRange) {
     BPlusTree<int, int, N> tree;
-
-    const int testRange = 100;
     std::unordered_map<int, int> keys;
 
-    std::cout << "Testing boolean insertion and deletion with N = " << N << "\n";
-
-    // Insert random boolean values
     for (int i = 0; i < testRange; ++i) {
         int key = std::rand() % (10 * testRange);
         keys[key] = key;
-        tree.insert(key, key); // Alternate true/false
-        std::cout << "Inserted key: " << key << " with value: " << key << std::endl;
-            assert(tree.size() == keys.size());
-    
-        for (auto it = tree.rbegin(); it != tree.rend(); --it) {
-            std::cout << *it << " ";
-        }
-        std::cout << std::endl;
+        tree.insert(key, key);
+        assert(tree.size() == keys.size());
     }
 
-    // Verify the size of the tree
-
-    // Validate inserted values
     for (const auto& key : keys) {
         assert(tree.at(key.first) == key.second);
     }
-    std::cout << "All inserted boolean values are correct.\n";
 
-    // Delete all keys and ensure the tree is empty
     for (const auto& key : keys) {
-
         assert(tree.erase(key.first));
-
-        std::cout << "Deleted key: " << key.first << "\n";
-        for (auto it = tree.rbegin(); it != tree.rend(); --it) {
-            std::cout << *it << " ";
-        }
-        std::cout << std::endl;
     }
 
-    // Verify the size of the tree
     assert(tree.size() == 0);
-    std::cout << "Tree size after deletion: " << tree.size() << "\n";
 }
 
 template<std::size_t N>
 void test_string_insertion_deletion(int testRange) {
     BPlusTree<int, std::string, N> tree;
-
     std::unordered_set<int> keys;
 
-    std::cout << "Testing string insertion and deletion with N = " << N << "\n";
-
-    // Insert random string values
     for (int i = 0; i < testRange; ++i) {
-        int key = std::rand() % (testRange * 10);
+        int key = std::rand() % (10 * testRange);
         keys.insert(key);
         tree.insert(key, "Value_" + std::to_string(key));
-        std::cout << "Inserted key: " << key << " with value: " << "Value_" + std::to_string(key) << "\n";
     }
 
     assert(tree.size() == keys.size());
-    std::cout << "Tree size after insertion: " << tree.size() << "\n";
 
     for (const auto& key : keys) {
         std::string expectedValue = "Value_" + std::to_string(key);
         assert(tree.at(key) == expectedValue);
     }
-    std::cout << "All inserted string values are correct.\n";
 
-    // Delete all keys and ensure the tree is empty
     for (const auto& key : keys) {
         assert(tree.erase(key));
-        std::cout << "Deleted key: " << key << "\n";
-        for (auto it = tree.rbegin(); it != tree.rend(); --it) {
-            std::cout << *it << " ";
-        }
-        std::cout << std::endl; 
     }
 
     assert(tree.size() == 0);
-    std::cout << "Tree size after deletion: " << tree.size() << "\n";
+}
+
+template<std::size_t N>
+void test_iteration(int testRange) {
+    BPlusTree<int, int, N> tree;
+    std::vector<int> keys;
+
+    for (int i = 0; i < testRange; ++i) {
+        int key = std::rand() % (10 * testRange);
+        if (std::find(keys.begin(), keys.end(), key) == keys.end()) {
+            keys.push_back(key);
+            tree.insert(key, key);
+        }
+    }
+
+    std::sort(keys.begin(), keys.end());
+    auto it = tree.begin();
+    for (const auto& key : keys) {
+        assert(it != tree.end());
+        assert(*it == key);
+        ++it;
+    }
+    assert(it == tree.end());
+
+    auto rit = tree.rbegin();
+    for (auto rkey = keys.rbegin(); rkey != keys.rend(); ++rkey) {
+        std::cout << *rit << std::endl;
+        assert(rit != tree.rend());
+        assert(*rit == *rkey);
+        ++rit;
+    }
+    assert(rit == tree.rend());
+}
+
+struct CopyCounter {
+    static size_t copyCount;
+
+    CopyCounter() = default;
+
+    CopyCounter(const CopyCounter&) {
+        ++copyCount;
+    }
+
+    CopyCounter& operator=(const CopyCounter&&) {
+        ++copyCount;
+        return *this;
+    }
+
+    CopyCounter(CopyCounter&&) {}
+
+    CopyCounter& operator=(CopyCounter&&) {
+        return *this;
+    }
+
+    static void reset() {
+        copyCount = 0;
+    }
+};
+
+size_t CopyCounter::copyCount = 0;
+
+template<std::size_t N>
+void test_copy_counter(int testRange) {
+    BPlusTree<int, CopyCounter, N> tree;
+    std::unordered_set<int> keys;
+
+    CopyCounter::reset();
+
+    for (int i = 0; i < testRange; ++i) {
+        int key = std::rand() % (10 * testRange);
+        keys.insert(key);
+        tree.insert(key, CopyCounter{});
+    }
+
+    assert(tree.size() == keys.size());
+
+    for (const auto& key : keys) {
+        assert(tree.contains(key));
+    }
+
+    for (const auto& key : keys) {
+        assert(tree.erase(key));
+    }
+
+    assert(tree.size() == 0);
+    assert(CopyCounter::copyCount == 0 && "CopyCounter was copied during insertion or deletion!");
 }
 
 int main() {
-    std::srand(SEED);
+    std::srand(929);
 
-    std::cout << "Running tests for BTree with N = 3" << std::endl;
     test_boolean_insertion_deletion<3>(100);
     test_string_insertion_deletion<3>(100);
+    test_int_insertion_deletion<3>(100);
+    test_iteration<3>(100);
 
-    std::cout << "Running tests for BTree with N = 4" << std::endl;
     test_boolean_insertion_deletion<4>(100);
     test_string_insertion_deletion<4>(100);
+    test_int_insertion_deletion<4>(100);
+    test_iteration<4>(100);
 
-    std::cout << "Running tests for BTree with N = 5" << std::endl;
-    test_boolean_insertion_deletion<5>(10000);
+    test_boolean_insertion_deletion<5>(1000);
     test_string_insertion_deletion<5>(100);
+    test_int_insertion_deletion<5>(1000);
+    test_iteration<5>(1000);
 
-    test_boolean_insertion_deletion<9>(10000);
-    test_boolean_insertion_deletion<22>(10000);
-    test_boolean_insertion_deletion<95>(10000);
+    test_int_insertion_deletion<9>(10000);
+    test_int_insertion_deletion<22>(10000);
+    test_int_insertion_deletion<95>(10000);
+
+    test_copy_counter<4>(100);
+    test_copy_counter<5>(100);
 
     std::cout << "All tests passed successfully!" << std::endl;
-
     return 0;
 }

@@ -6,7 +6,6 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <variant>
 
 
 template<typename K, typename V, std::size_t N = 4>
@@ -193,39 +192,104 @@ private:
             segments = newSegment;
         }
     };
-    class Iterator {
+
+    class BPlusTreeIterator {
     private:
         ValueNode* current;
+        bool forward;
+
     public:
-        explicit Iterator(ValueNode* node) : current(node) {}
+        explicit BPlusTreeIterator(ValueNode* node, bool forward) : current(node), forward(forward) {}
 
         V& operator*() { return current->value; }
         V* operator->() { return &current->value; }
 
-        Iterator& operator++() {
-            if (current) current = current->next;
+        BPlusTreeIterator& operator++() {
+            if (current) {
+                if (forward)
+                    current = current->next;
+                else
+                    current = current->prev;
+            }
+
             return *this;
         }
 
-        Iterator operator++(int) {
-            Iterator temp = *this;
-            (*this)++;
+        BPlusTreeIterator operator++(int) {
+            BPlusTreeIterator temp = *this;
+            ++(*this);
             return temp;
         }
 
-        Iterator& operator--() {
-            if (current) current = current->prev;
+        BPlusTreeIterator& operator--() {
+            if (current) {
+                if (forward)
+                    current = current->prev;
+                else
+                    current = current->next;
+            }
+
             return *this;
         }
 
-        Iterator operator--(int) {
-            Iterator temp = *this;
-            (*this)--;
+        BPlusTreeIterator operator--(int) {
+            BPlusTreeIterator temp = *this;
+            --(*this);
             return temp;
         }
 
-        bool operator==(const Iterator& other) const { return current == other.current; }
-        bool operator!=(const Iterator& other) const { return current != other.current; }
+        bool operator==(const BPlusTreeIterator& other) const { return current == other.current; }
+        bool operator!=(const BPlusTreeIterator& other) const { return current != other.current; }
+    };
+
+
+    class ConstBPlusTreeIterator {
+    private:
+        const ValueNode* current;
+        bool forward;
+
+    public:
+        explicit ConstBPlusTreeIterator(const ValueNode* node, bool forward) : current(node), forward(forward) {}
+
+        const V& operator*() const { return current->value; }
+        const V* operator->() const { return &current->value; }
+
+        ConstBPlusTreeIterator& operator++() {
+            if (current) {
+                if (forward)
+                    current = current->next;
+                else
+                    current = current->prev;
+            }
+
+            return *this;
+        }
+
+        ConstBPlusTreeIterator operator++(int) {
+            ConstBPlusTreeIterator temp = *this;
+            ++(*this);
+            return temp;
+        }
+
+        ConstBPlusTreeIterator& operator--() {
+            if (current) {
+                if (forward)
+                    current = current->prev;
+                else
+                    current = current->next;
+            }
+
+            return *this;
+        }
+
+        ConstBPlusTreeIterator operator--(int) {
+            ConstBPlusTreeIterator temp = *this;
+            --(*this);
+            return temp;
+        }
+
+        bool operator==(const ConstBPlusTreeIterator& other) const { return current == other.current; }
+        bool operator!=(const ConstBPlusTreeIterator& other) const { return current != other.current; }
     };
 
     NodePool nodePool;
@@ -251,34 +315,54 @@ private:
 
     void insert_aux(unsigned depth, Node* node, const K& key, const V& value);
 
-    V& find_aux(Node* node, const K& key, unsigned depth) const;
+    BPlusTreeIterator find_aux(Node* node, const K& key, unsigned depth);
+
+    ConstBPlusTreeIterator find_aux(Node* node, const K& key, unsigned depth) const;
+
+    void free_all(Node* node, unsigned depth);
 
 public:
     BPlusTree() :  nodePool(256), root(nullptr) {};
 
     std::size_t size() const { return elementCount; }
 
+    bool empty() const { return elementCount > 0; }
+
     void insert(const K&, const V&);
 
-    //void insert (K&&, V&&);
+    void insert(const K&, V&&);
 
     bool erase(const K&);
 
     bool erase_aux(unsigned depth, Node* node, const K& key);
 
-    void erase_all();
+    void clear();
 
     V& at(const K& key);
 
     const V& at(const K& key) const;
 
-    Iterator begin() { return Iterator(valuesBegin); }
+    BPlusTreeIterator find(const K& key);
 
-    Iterator end() { return Iterator(nullptr); }
+    ConstBPlusTreeIterator find(const K& key) const;
 
-    Iterator rbegin() { return Iterator(valuesEnd); }
+    bool contains(const K& key) const;
 
-    Iterator rend() { return Iterator(nullptr); }
+    BPlusTreeIterator begin() { return BPlusTreeIterator(valuesBegin, true); }
+
+    BPlusTreeIterator end() { return BPlusTreeIterator(nullptr, true); }
+
+    BPlusTreeIterator rbegin() { return BPlusTreeIterator(valuesEnd, false); }
+
+    BPlusTreeIterator rend() { return BPlusTreeIterator(nullptr, false); }
+
+    ConstBPlusTreeIterator cbegin() const { return ConstBPlusTreeIterator(valuesBegin, true); }
+
+    ConstBPlusTreeIterator cend() const { return ConstBPlusTreeIterator(nullptr, true); }
+
+    ConstBPlusTreeIterator crbegin() const { return ConstBPlusTreeIterator(valuesEnd, false); }
+
+    ConstBPlusTreeIterator crend() const { return ConstBPlusTreeIterator(nullptr, false); }
 
     std::string toString() const {
         std::ostringstream sb;
@@ -540,6 +624,32 @@ void BPlusTree<K, V, N>::insert(const K& key, const V& value) {
     }
 }
 
+
+template<typename K, typename V, std::size_t N>
+void BPlusTree<K, V, N>::insert(const K& key, V&& value) {
+        if(!root) {
+        assert(!valuesBegin);
+        root = new Node();
+        root->size = 1;
+        root->keys[0] = key;
+
+        valuesBegin = nodePool.allocate(std::move(value));
+        valuesEnd = valuesBegin;
+        root->values[0] = valuesBegin;
+
+        elementCount = 1;
+        height = 1;
+
+    } else {
+        elementCount++;
+        insert_aux(1, root, key, std::move(value));
+        
+        if (root->size > N) {
+            splitRoot(root, height <= 1);
+        }
+    }
+}
+
 /*
  * Searches keys of node. If key is found return index of right child of the key. 
  * Otherwise return index of the right child of the first key greater than the target. 
@@ -592,22 +702,50 @@ void BPlusTree<K, V, N>::insert_aux(unsigned depth, Node* node, const K& key, co
 
 template<typename K, typename V, std::size_t N>
 const V& BPlusTree<K, V, N>::at(const K& key) const {
-    if (!root)
-        return false;
+    BPlusTreeIterator it = find(key);
 
-    return find_aux(root, key, 1);
+    if (it == end())
+        throw std::out_of_range("key not found");
+
+    return *it;
 }
 
 template<typename K, typename V, std::size_t N>
 V& BPlusTree<K, V, N>::at(const K& key) {
-    if (!root)
+    BPlusTreeIterator it = find(key);
+
+    if (it == end())
         throw std::out_of_range("key not found");
+
+    return *it;
+}
+
+template<typename K, typename V, std::size_t N>
+bool BPlusTree<K, V, N>::contains(const K& key) const {
+    if (!root)
+        return false;
+    
+    return find_aux(root, key, 1) != cend();
+}
+
+template<typename K, typename V, std::size_t N>
+BPlusTree<K, V, N>::BPlusTreeIterator BPlusTree<K, V, N>::find(const K& key) {
+    if (!root)
+        return end();
 
     return find_aux(root, key, 1);
 }
 
 template<typename K, typename V, std::size_t N>
-V& BPlusTree<K, V, N>::find_aux(Node* node, const K& key, unsigned depth) const {
+BPlusTree<K, V, N>::ConstBPlusTreeIterator BPlusTree<K, V, N>::find(const K& key) const {
+    if (!root)
+        return cend();
+
+    return find_aux(root, key, 1);
+}
+
+template<typename K, typename V, std::size_t N>
+BPlusTree<K, V, N>::BPlusTreeIterator BPlusTree<K, V, N>::find_aux(Node* node, const K& key, unsigned depth) {
     bool isLeaf = depth >= height;
 
     std::size_t idx;
@@ -615,10 +753,29 @@ V& BPlusTree<K, V, N>::find_aux(Node* node, const K& key, unsigned depth) const 
 
     if (isLeaf) {
         if (found) {
-            return node->values[idx - 1]->value;
-
+            return BPlusTreeIterator(node->values[idx - 1], true);
         } else {
-            throw std::out_of_range("key not found");
+            return end();
+        }
+
+    } else {
+        return find_aux(node->children[idx], key, depth + 1);
+    }
+}
+
+
+template<typename K, typename V, std::size_t N>
+BPlusTree<K, V, N>::ConstBPlusTreeIterator BPlusTree<K, V, N>::find_aux(Node* node, const K& key, unsigned depth) const {
+    bool isLeaf = depth >= height;
+
+    std::size_t idx;
+    bool found = findKeyInNode(node, key, idx);
+
+    if (isLeaf) {
+        if (found) {
+            return ConstBPlusTreeIterator(node->values[idx - 1], true);
+        } else {
+            return cend();
         }
 
     } else {
@@ -887,7 +1044,21 @@ bool BPlusTree<K, V, N>::erase_aux(unsigned depth, Node* node, const K& key) {
 }
 
 template<typename K, typename V, std::size_t N>
-void BPlusTree<K, V, N>:: erase_all() {
+void BPlusTree<K, V, N>::free_all(Node* node, unsigned depth) {
+    if (depth < height) {
+        for (Node* child : node->children) {
+            free_all(child, depth + 1);
+            delete child;
+        }
+    }
+
+    delete node;
+}
+
+
+template<typename K, typename V, std::size_t N>
+void BPlusTree<K, V, N>:: clear() {
+    free_all(root, 1);
     nodePool.reset();
     elementCount = 0;
     height = 0;
