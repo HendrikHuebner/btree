@@ -4,34 +4,71 @@
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
+#include <iterator>
+#include <string>
+#include <iostream>
+#include <sstream>
 #include <stdexcept>
 
 
 template<typename K, typename V, std::size_t N = 4>
 class BPlusTree {
 
-static_assert(N > 2, "N must be greater than 2");
+static_assert(N > 3, "N must be greater than 3");
 
 private:
-    struct ValueNode {
-        ValueNode* next = nullptr;
-        ValueNode* prev = nullptr;
-        V value;
-    };
-
     struct Node {
         std::size_t size;
         union {
             Node* children[N + 2];
-            ValueNode* values[N + 1];
+            V* values[N + 1];
         };
 
+        Node* next = nullptr;
+        Node* prev = nullptr;
         K keys[N + 1];
 
         public:
         Node() {}
+
+        int toString(std::ostringstream& sb, int from, unsigned depth, unsigned height) const {
+            int mine = from++;
+            sb << "\tstruct" << mine << " [label=\"";
+            for (size_t i = 0; i < 2 * size + 1; i++) {
+                if (i > 0) {
+                    sb << "|";
+                }
+                sb << "<f" << i << "> ";
+                if ((i & 1) == 1) {
+                    sb << keys[i / 2];
+                }
+            }
+            sb << "\"];" << std::endl;
+
+            for (size_t i = 0; i < size; i++) {
+                int field = 2 * i;
+                
+                sb << "\tstruct" << mine << ":<f" << field << "> -> struct" << from << ";" << std::endl;
+
+                if (depth >= height) {
+                    sb << "\tstruct" << from << " [label=\"Value: " << *values[i] << "\"];" << std::endl;
+                    from++;
+
+                } else {
+                    from = children[i]->toString(sb, from, depth + 1, height);
+                }
+            }
+
+            if (depth < height) {
+                sb << "\tstruct" << mine << ":<f" << 2 * size << "> -> struct" << from << ";" << std::endl;
+                from = children[size]->toString(sb, from, depth + 1, height);
+            }
+            
+            return from;           
+        }
     };
 
+/*
     class NodePool {
     public:
         struct PoolSegment {
@@ -158,27 +195,42 @@ private:
             segments = newSegment;
         }
     };
+*/
+
+    class NodePool {
+        public:
+
+        NodePool(int) {}
+        template <typename Value>
+        V* allocate(Value&& value) {
+            return new Value(std::forward<Value>(value));
+        }
+
+        void deallocate(V* node) {
+            delete node;
+        }
+
+        void reset() {}
+    };
+
 
     class BPlusTreeIterator {
     private:
-        ValueNode* current;
+        Node* current;
+        std::size_t idx;
         bool forward;
 
-    public:
-        explicit BPlusTreeIterator(ValueNode* node, bool forward) : current(node), forward(forward) {}
+        template<typename Iterator>
+        friend Iterator& incrementIterator(Iterator& it, bool forward);
 
-        V& operator*() { return current->value; }
-        V* operator->() { return &current->value; }
+    public:
+        explicit BPlusTreeIterator(Node* node, std::size_t idx, bool forward) : current(node), idx(idx), forward(forward) {}
+
+        V& operator*() { return *current->values[idx]; }
+        V* operator->() { return current->values[idx]; }
 
         BPlusTreeIterator& operator++() {
-            if (current) {
-                if (forward)
-                    current = current->next;
-                else
-                    current = current->prev;
-            }
-
-            return *this;
+            return incrementIterator<BPlusTreeIterator>(*this, forward);
         }
 
         BPlusTreeIterator operator++(int) {
@@ -188,14 +240,7 @@ private:
         }
 
         BPlusTreeIterator& operator--() {
-            if (current) {
-                if (forward)
-                    current = current->prev;
-                else
-                    current = current->next;
-            }
-
-            return *this;
+            return incrementIterator<BPlusTreeIterator>(*this, !forward);
         }
 
         BPlusTreeIterator operator--(int) {
@@ -210,24 +255,21 @@ private:
 
     class ConstBPlusTreeIterator {
     private:
-        const ValueNode* current;
+        const Node* current;
+        std::size_t idx;
         bool forward;
 
-    public:
-        explicit ConstBPlusTreeIterator(const ValueNode* node, bool forward) : current(node), forward(forward) {}
+        template<typename Iterator>
+        friend Iterator& incrementIterator(Iterator& it, bool forward);
 
-        const V& operator*() const { return current->value; }
-        const V* operator->() const { return &current->value; }
+    public:
+        explicit ConstBPlusTreeIterator(const Node* node, std::size_t idx, bool forward) : current(node), idx(idx), forward(forward) {}
+
+        const V& operator*() const { return *current->values[idx]; }
+        const V* operator->() const { return current->values[idx]; }
 
         ConstBPlusTreeIterator& operator++() {
-            if (current) {
-                if (forward)
-                    current = current->next;
-                else
-                    current = current->prev;
-            }
-
-            return *this;
+            return incrementIterator<BPlusTreeIterator>(*this, forward);
         }
 
         ConstBPlusTreeIterator operator++(int) {
@@ -237,14 +279,7 @@ private:
         }
 
         ConstBPlusTreeIterator& operator--() {
-            if (current) {
-                if (forward)
-                    current = current->prev;
-                else
-                    current = current->next;
-            }
-
-            return *this;
+            return incrementIterator<BPlusTreeIterator>(*this, !forward);
         }
 
         ConstBPlusTreeIterator operator--(int) {
@@ -257,10 +292,15 @@ private:
         bool operator!=(const ConstBPlusTreeIterator& other) const { return current != other.current; }
     };
 
+    using iterator = BPlusTreeIterator;
+    using const_iterator = ConstBPlusTreeIterator;
+    using reverse_iterator = std::reverse_iterator<BPlusTreeIterator>;
+    using reverse_const_iterator = std::reverse_iterator<ConstBPlusTreeIterator>;
+    
     NodePool nodeAllocator;
     Node* root = nullptr;
-    ValueNode* valuesBegin = nullptr;
-    ValueNode* valuesEnd = nullptr;
+    Node* valuesBegin = nullptr;
+    Node* valuesEnd = nullptr;
     unsigned height = 0;
     std::size_t elementCount = 0;
 
@@ -270,25 +310,23 @@ private:
      */
     bool findKeyInNode(Node* node, const K& key, std::size_t& idx) const;
     
-    void insertValue(Node* node, std::size_t idx, auto&& key, auto* value, bool reorderLinks = true);
+    void insertValue(Node* node, std::size_t idx, auto&& key, V* value);
 
-    void insertNode(Node* node, std::size_t idx, auto&& key, auto* child);
+    void insertNode(Node* node, std::size_t idx, auto&& key, Node* child);
 
     void removeKeyFromNode(Node* node, std::size_t i);
 
-    void removeKeyFromValueNode(Node* node, std::size_t i, bool reorderLinks = true);
-
-    void splitRoot(Node* node, bool isLeaf);
+    void removeKeyFromValueNode(Node* node, std::size_t i);
 
     void split(Node* parent, std::size_t idx, bool  childIsLeaf);
 
-    void insertAux(unsigned depth, Node* node, const K& key, auto&& value);
+    void insert(unsigned depth, Node* node, const K& key, auto&& value);
 
-    BPlusTreeIterator findAux(Node* node, const K& key, unsigned depth);
+    iterator find(Node* node, const K& key, unsigned depth);
 
-    ConstBPlusTreeIterator findAux(Node* node, const K& key, unsigned depth) const;
+    const_iterator find(Node* node, const K& key, unsigned depth) const;
 
-    void freeNodes(Node* node, unsigned depth);
+    void free_nodes(Node* node, unsigned depth);
 
 public:
     BPlusTree() : nodeAllocator(256), root(nullptr) {};
@@ -327,7 +365,7 @@ public:
     BPlusTree& operator=(const BPlusTree&) = delete;
 
     ~BPlusTree() {
-        freeNodes(root, 1);
+        free_nodes(root, 1);
         root = nullptr;
         valuesBegin = nullptr;
         valuesEnd = nullptr;
@@ -337,9 +375,8 @@ public:
 
     bool empty() const { return elementCount > 0; }
 
-    void insert(const K&, const V&);
-
-    void insert(const K&, V&&);
+    template<typename Value>
+    void insert(const K&, Value&&);
 
     void insert(const std::pair<K, V>& entry) { insert(entry.first, entry.second); }
 
@@ -353,32 +390,63 @@ public:
 
     const V& at(const K& key) const;
 
-    BPlusTreeIterator find(const K& key);
+    iterator find(const K& key);
 
-    ConstBPlusTreeIterator find(const K& key) const;
+    const_iterator find(const K& key) const;
 
     bool contains(const K& key) const noexcept;
 
-    BPlusTreeIterator begin() noexcept { return BPlusTreeIterator(valuesBegin, true); }
-    ConstBPlusTreeIterator begin() const noexcept { return cbegin(); }
-    BPlusTreeIterator end() noexcept { return BPlusTreeIterator(nullptr, true); }
-    ConstBPlusTreeIterator end() const noexcept { return cend(); }
-    BPlusTreeIterator rbegin() noexcept { return BPlusTreeIterator(valuesEnd, false); }
-    ConstBPlusTreeIterator rbegin() const noexcept { return crbegin(); }
-    BPlusTreeIterator rend() noexcept { return BPlusTreeIterator(nullptr, false); }
-    ConstBPlusTreeIterator rend() const noexcept { return crend(); }
+    iterator begin() noexcept { return iterator(valuesBegin, 0, true); }
+    iterator end() noexcept { return iterator(nullptr, 0, true); }
+    const_iterator begin() const noexcept { return cbegin(); }
+    const_iterator end() const noexcept { return cend(); }
+    const_iterator cbegin() const noexcept { return const_iterator(valuesBegin, 0, true); }
+    const_iterator cend() const noexcept { return const_iterator(nullptr, 0, true); }
 
-    ConstBPlusTreeIterator cbegin() const noexcept { return ConstBPlusTreeIterator(valuesBegin, true); }
-    ConstBPlusTreeIterator cend() const noexcept { return ConstBPlusTreeIterator(nullptr, true); }
-    ConstBPlusTreeIterator crbegin() const noexcept { return ConstBPlusTreeIterator(valuesEnd, false); }
-    ConstBPlusTreeIterator crend() const noexcept { return ConstBPlusTreeIterator(nullptr, false); }
+    reverse_iterator rbegin() noexcept { return std::reverse_iterator<iterator>(begin()); }
+    reverse_iterator rend() noexcept { return std::reverse_iterator<iterator>(end()); }
+    reverse_const_iterator rbegin() const noexcept { return std::reverse_iterator<const_iterator>(cbegin()); }
+    reverse_const_iterator rend() const noexcept { return std::reverse_iterator<const_iterator>(cend()); }
+    reverse_const_iterator crbegin() const noexcept { return std::reverse_iterator<const_iterator>(cbegin()); }
+    reverse_const_iterator crend() const noexcept { return std::reverse_iterator<const_iterator>(cend()); }
+
+    std::string toString() const {
+        std::ostringstream sb;
+        sb << "digraph {" << std::endl;
+        sb << "\tnode [shape=record];" << std::endl;
+        if (root != nullptr) {
+            root->toString(sb, 0, 1, height);
+        }
+        sb << "}";
+        return sb.str();
+    }
 };
 
 /* =========== IMPLEMENTATION =========== */
 
+template<typename Iterator>
+Iterator& incrementIterator(Iterator& it, bool forward) {
+    if (!it.current) return it;
+
+    if (forward) {
+        if (++it.idx >= it.current->size) {
+            it.current = it.current->next;
+            it.idx = 0;
+        }
+    } else {
+        if (it.idx == 0) {
+            it.current = it.current->prev;
+            it.idx = it.current ? it.current->size - 1 : 0;
+        } else {
+            it.idx--;
+        }
+    }
+
+    return it;
+}
 
 template<typename K, typename V, std::size_t N>
-void BPlusTree<K, V, N>::insertNode(Node* node, std::size_t i, auto&& key, auto* child) {    
+void BPlusTree<K, V, N>::insertNode(Node* node, std::size_t i, auto&& key, Node* child) {    
     for (std::size_t j = node->size; j > i; j--) {
         node->keys[j] = std::move(node->keys[j - 1]);
         node->children[j + 1] = node->children[j];
@@ -390,36 +458,8 @@ void BPlusTree<K, V, N>::insertNode(Node* node, std::size_t i, auto&& key, auto*
 }
 
 template<typename K, typename V, std::size_t N>
-void BPlusTree<K, V, N>::insertValue(Node* node, std::size_t i, auto&& key, auto* value, bool reorderLinks) {
-
+void BPlusTree<K, V, N>::insertValue(Node* node, std::size_t i, auto&& key, V* value) {
     assert(node->size > 0 && "Can't insert into empty node");
-
-    // insert into linked list
-    if (reorderLinks) {
-        if (i >= node->size) {
-            value->next = node->values[i - 1]->next;
-            value->prev = node->values[i - 1];
-            node->values[i - 1]->next = value;
-
-            if (value->next) {
-                value->next->prev = value;
-            
-            } else {
-                valuesEnd = value;
-            }
-        } else {
-
-            value->next = node->values[i];
-            value->prev = node->values[i]->prev;
-            node->values[i]->prev = value;
-        
-            if (value->prev) {
-                value->prev->next = value;
-            } else {
-                valuesBegin = value;
-            }
-        }
-    }
 
     // shuffle node pointers  
     for (std::size_t j = node->size; j > i; j--) {
@@ -446,14 +486,13 @@ void BPlusTree<K, V, N>::removeKeyFromNode(Node* node, std::size_t i) {
 }
 
 template<typename K, typename V, std::size_t N>
-void BPlusTree<K, V, N>::removeKeyFromValueNode(Node* node, std::size_t i, bool reorderLinks) {
+void BPlusTree<K, V, N>::removeKeyFromValueNode(Node* node, std::size_t i) {
     assert(node->size <= N);
 
-    ValueNode* value = node->values[i];
+    V* value = node->values[i];
 
-    // remove from linked list
+    /* remove from linked list
     if (reorderLinks) {
-
         if (value->next) {
             if (value->prev) {
                 value->prev->next = value->next;
@@ -476,10 +515,10 @@ void BPlusTree<K, V, N>::removeKeyFromValueNode(Node* node, std::size_t i, bool 
                 valuesBegin = nullptr;
                 valuesEnd = nullptr;
             }
-        }
+        } 
     
         nodeAllocator.deallocate(value);
-    }
+    } */
  
     // shuffle nodes
     for (std::size_t j = i; j < node->size - 1; j++) {
@@ -488,65 +527,6 @@ void BPlusTree<K, V, N>::removeKeyFromValueNode(Node* node, std::size_t i, bool 
     }
 
     node->size--;
-}
-
-template<typename K, typename V, std::size_t N>
-void BPlusTree<K, V, N>::splitRoot(Node* node, bool isLeaf) {
-    Node* left = new Node();
-    Node* right = new Node();
-
-    if (isLeaf) {
-        // duplicate key at splitIndex
-        constexpr std::size_t splitIndex = (N + 1) / 2;
-
-        right->size = splitIndex;
-        left->size = splitIndex;
-
-        for(std::size_t k = 0; k < splitIndex; k++) {
-            left->keys[k] = std::move(node->keys[k]);
-            left->values[k] = node->values[k];
-            right->keys[k] = std::move(node->keys[k + splitIndex]);
-            right->values[k] = node->values[k + splitIndex];
-        }
-
-        if constexpr (N % 2 == 0) {
-            right->keys[splitIndex] = std::move(node->keys[N]);
-            right->values[splitIndex] = node->values[N];
-            right->size = splitIndex + 1;
-        }
-
-        node->keys[0] = node->keys[splitIndex];
-
-    } else {
-        constexpr std::size_t splitIndex = N / 2;
-
-        right->size = splitIndex;
-        left->size = splitIndex;
-
-        for(std::size_t k = 0; k < splitIndex; k++) {
-            left->keys[k] = std::move(node->keys[k]);
-            left->children[k] = node->children[k];
-
-            right->keys[k] = std::move(node->keys[k + splitIndex + 1]);
-            right->children[k] = node->children[k + splitIndex + 1];
-        }
-        
-        left->children[splitIndex] = node->children[splitIndex];
-        right->children[splitIndex] = node->children[2 * splitIndex + 1];
-
-        if constexpr (N % 2 != 0) {
-            right->keys[splitIndex] = std::move(node->keys[N]);
-            right->children[splitIndex + 1] = node->children[N + 1];
-            right->size = splitIndex + 1;
-        }
-
-        node->keys[0] = std::move(node->keys[splitIndex]);
-    }
-    
-    node->children[0] = left;
-    node->children[1] = right;
-    node->size = 1;
-    height++;
 }
 
 
@@ -576,6 +556,17 @@ void BPlusTree<K, V, N>::split(Node* parent, std::size_t idx, bool childIsLeaf) 
         insertNode(parent, idx, std::move(left->keys[splitIndex]), right);
         left->size = splitIndex;
 
+        right->prev = left;
+        right->next = left->next;
+        left->next = right;
+        
+        if (right->next) {
+            right->next->prev = right;
+        } else {
+            assert(left == valuesEnd);
+            valuesEnd = right;
+        }
+        
     } else {
         // child is inner node
         constexpr std::size_t splitIndex = N / 2;
@@ -601,55 +592,37 @@ void BPlusTree<K, V, N>::split(Node* parent, std::size_t idx, bool childIsLeaf) 
 }
 
 template<typename K, typename V, std::size_t N>
-void BPlusTree<K, V, N>::insert(const K& key, const V& value) {
+template<typename Value>
+void BPlusTree<K, V, N>::insert(const K& key, Value&& value) {
     if(!root) {
         assert(!valuesBegin);
         root = new Node();
         root->size = 1;
         root->keys[0] = key;
+        root->values[0] = new V(std::forward<Value>(value));
 
-        valuesBegin = nodeAllocator.allocate(value);
+        valuesBegin = root;
         valuesEnd = valuesBegin;
-        root->values[0] = valuesBegin;
 
         elementCount = 1;
         height = 1;
 
     } else {
         elementCount++;
-        insertAux(1, root, key, value);
+        insert(1, root, key, std::forward<Value>(value));
         
         if (root->size > N) {
-            splitRoot(root, height <= 1);
+            Node* newRoot = new Node();
+            newRoot->size = 0;
+            newRoot->children[0] = root;
+
+            split(newRoot, 0, height <= 1);
+            root = newRoot;
+            height++;
         }
     }
 }
 
-
-template<typename K, typename V, std::size_t N>
-void BPlusTree<K, V, N>::insert(const K& key, V&& value) {
-        if(!root) {
-        assert(!valuesBegin);
-        root = new Node();
-        root->size = 1;
-        root->keys[0] = key;
-
-        valuesBegin = nodeAllocator.allocate(std::move(value));
-        valuesEnd = valuesBegin;
-        root->values[0] = valuesBegin;
-
-        elementCount = 1;
-        height = 1;
-
-    } else {
-        elementCount++;
-        insertAux(1, root, key, std::move(value));
-        
-        if (root->size > N) {
-            splitRoot(root, height <= 1);
-        }
-    }
-}
 
 template<typename K, typename V, std::size_t N>
 bool BPlusTree<K, V, N>::findKeyInNode(Node* node, const K& key, std::size_t& idx) const {
@@ -693,7 +666,7 @@ bool BPlusTree<K, V, N>::findKeyInNode(Node* node, const K& key, std::size_t& id
 }
 
 template<typename K, typename V, std::size_t N>
-void BPlusTree<K, V, N>::insertAux(unsigned depth, Node* node, const K& key, auto&& value) {
+void BPlusTree<K, V, N>::insert(unsigned depth, Node* node, const K& key, auto&& value) {
     bool isLeaf = depth >= height;
 
     std::size_t idx;
@@ -704,7 +677,7 @@ void BPlusTree<K, V, N>::insertAux(unsigned depth, Node* node, const K& key, aut
 
         if (foundInCurrentNode) {
             // replace
-            node->values[idx - 1]->value = std::move(value);
+            *node->values[idx - 1] = std::move(value);
             elementCount--;
 
         } else {
@@ -712,7 +685,7 @@ void BPlusTree<K, V, N>::insertAux(unsigned depth, Node* node, const K& key, aut
         }
 
     } else {
-        insertAux(depth + 1, node->children[idx], key, value);
+        insert(depth + 1, node->children[idx], key, value);
     
         if(node->children[idx]->size > N) {
             split(node, idx, depth + 1 >= height);
@@ -724,7 +697,7 @@ void BPlusTree<K, V, N>::insertAux(unsigned depth, Node* node, const K& key, aut
 
 template<typename K, typename V, std::size_t N>
 const V& BPlusTree<K, V, N>::at(const K& key) const {
-    ConstBPlusTreeIterator it = find(key);
+    const_iterator it = find(key);
 
     if (it == cend())
         throw std::out_of_range("key not found");
@@ -734,7 +707,7 @@ const V& BPlusTree<K, V, N>::at(const K& key) const {
 
 template<typename K, typename V, std::size_t N>
 V& BPlusTree<K, V, N>::at(const K& key) {
-    BPlusTreeIterator it = find(key);
+    iterator it = find(key);
 
     if (it == end())
         throw std::out_of_range("key not found");
@@ -747,27 +720,27 @@ bool BPlusTree<K, V, N>::contains(const K& key) const noexcept {
     if (!root)
         return false;
     
-    return findAux(root, key, 1) != cend();
+    return find(root, key, 1) != cend();
 }
 
 template<typename K, typename V, std::size_t N>
-BPlusTree<K, V, N>::BPlusTreeIterator BPlusTree<K, V, N>::find(const K& key) {
+BPlusTree<K, V, N>::iterator BPlusTree<K, V, N>::find(const K& key) {
     if (!root)
         return end();
 
-    return findAux(root, key, 1);
+    return find(root, key, 1);
 }
 
 template<typename K, typename V, std::size_t N>
-BPlusTree<K, V, N>::ConstBPlusTreeIterator BPlusTree<K, V, N>::find(const K& key) const {
+BPlusTree<K, V, N>::const_iterator BPlusTree<K, V, N>::find(const K& key) const {
     if (!root)
         return cend();
 
-    return findAux(root, key, 1);
+    return find(root, key, 1);
 }
 
 template<typename K, typename V, std::size_t N>
-BPlusTree<K, V, N>::BPlusTreeIterator BPlusTree<K, V, N>::findAux(Node* node, const K& key, unsigned depth) {
+BPlusTree<K, V, N>::iterator BPlusTree<K, V, N>::find(Node* node, const K& key, unsigned depth) {
     bool isLeaf = depth >= height;
 
     std::size_t idx;
@@ -775,19 +748,19 @@ BPlusTree<K, V, N>::BPlusTreeIterator BPlusTree<K, V, N>::findAux(Node* node, co
 
     if (isLeaf) {
         if (found) {
-            return BPlusTreeIterator(node->values[idx - 1], true);
+            return iterator(node, idx - 1, true);
         } else {
             return end();
         }
 
     } else {
-        return findAux(node->children[idx], key, depth + 1);
+        return find(node->children[idx], key, depth + 1);
     }
 }
 
 
 template<typename K, typename V, std::size_t N>
-BPlusTree<K, V, N>::ConstBPlusTreeIterator BPlusTree<K, V, N>::findAux(Node* node, const K& key, unsigned depth) const {
+BPlusTree<K, V, N>::const_iterator BPlusTree<K, V, N>::find(Node* node, const K& key, unsigned depth) const {
     bool isLeaf = depth >= height;
 
     std::size_t idx;
@@ -795,13 +768,13 @@ BPlusTree<K, V, N>::ConstBPlusTreeIterator BPlusTree<K, V, N>::findAux(Node* nod
 
     if (isLeaf) {
         if (found) {
-            return ConstBPlusTreeIterator(node->values[idx - 1], true);
+            return const_iterator(node, idx - 1, true);
         } else {
             return cend();
         }
 
     } else {
-        return findAux(node->children[idx], key, depth + 1);
+        return find(node->children[idx], key, depth + 1);
     }
 }
 
@@ -878,30 +851,7 @@ bool BPlusTree<K, V, N>::erase_aux(unsigned depth, Node* node, const K& key) {
 
         assert(nextLargest->keys[0] == key && "Inner node must have duplicate key as direct successor");
 
-        if constexpr (N == 3) {
-            // rare special case
-            if (childIsLeaf && nextSmallest->size == 1 && idx > 0) {
-                removeKeyFromValueNode(nextLargest, 0);
-
-                for (std::size_t i = idx; i < node->size - 1; i++) {
-                    node->keys[i] = node->keys[i + 1];
-                    node->children[i + 1] = node->children[i + 2];
-                }
-                
-                node->size--;
-                for (std::size_t i = 0; i < nextLargest->size; i++) {
-                    node->children[idx]->keys[1 + i] = nextLargest->keys[i];
-                    node->children[idx]->values[1 + i] = nextLargest->values[i];
-                    node->children[idx]->size++;
-                }
-
-                delete nextLargest;
-
-                return true;
-            }
-        }
-
-        ValueNode* valueToErase = nextLargest->values[0];
+        V* valueToErase = nextLargest->values[0];
         const K& nextSmallestKey = nextSmallest->keys[nextSmallest->size - 1];
 
         // duplicate key of nextSmallest as inner node
@@ -909,31 +859,9 @@ bool BPlusTree<K, V, N>::erase_aux(unsigned depth, Node* node, const K& key) {
         node->keys[idx] = nextSmallestKey;
 
         // swap value nodes
-        ValueNode* nextSmallestValue = nextSmallest->values[nextSmallest->size - 1];
+        V* nextSmallestValue = nextSmallest->values[nextSmallest->size - 1];
         nextSmallest->values[nextSmallest->size - 1] = valueToErase;
         nextLargest->values[0] = nextSmallestValue;
-
-        // swap links
-        nextSmallestValue->next = valueToErase->next;
-        valueToErase->next = nextSmallestValue;
-        valueToErase->prev = nextSmallestValue->prev;
-        nextSmallestValue->prev = valueToErase;
-
-        if (nextSmallestValue->next) {
-            nextSmallestValue->next->prev = nextSmallestValue;
-        }
-
-        if (nextSmallestValue == valuesBegin) {
-            valuesBegin = valueToErase;
-        }
-        
-        if (valueToErase == valuesEnd) {
-            valuesEnd = nextSmallestValue;
-        }
-
-        if (valueToErase->prev) {
-            valueToErase->prev->next = valueToErase;
-        }
 
         erase_aux(depth + 1, child, nextSmallestKey);
         retval = true;
@@ -959,7 +887,7 @@ bool BPlusTree<K, V, N>::erase_aux(unsigned depth, Node* node, const K& key) {
         if (childIsLeaf) {
             // rotate keys
             node->keys[idx - 1] = leftSibling->keys[leftSibling->size - 1];
-            insertValue(child, 0, node->keys[idx - 1], leftSibling->values[leftSibling->size - 1], false);
+            insertValue(child, 0, node->keys[idx - 1], leftSibling->values[leftSibling->size - 1]);
 
         } else {
             // rotate keys
@@ -983,7 +911,7 @@ bool BPlusTree<K, V, N>::erase_aux(unsigned depth, Node* node, const K& key) {
             child->keys[MIN_KEYS - 1] = rightSibling->keys[0];
             child->values[MIN_KEYS - 1] = rightSibling->values[0];
             child->size++;
-            removeKeyFromValueNode(rightSibling, 0, false);
+            removeKeyFromValueNode(rightSibling, 0);
             node->keys[idx] = rightSibling->keys[0];
 
         } else {
@@ -1009,6 +937,14 @@ bool BPlusTree<K, V, N>::erase_aux(unsigned depth, Node* node, const K& key) {
             }
 
             leftSibling->size = 2 * MIN_KEYS - 1;
+            leftSibling->next = child->next;
+
+            if (child->next) {
+                child->next->prev = leftSibling;
+            } else {
+                assert(child == valuesEnd);
+                valuesEnd = leftSibling;
+            }
 
         } else {
             leftSibling->keys[MIN_KEYS] = std::move(node->keys[idx - 1]);
@@ -1040,7 +976,15 @@ bool BPlusTree<K, V, N>::erase_aux(unsigned depth, Node* node, const K& key) {
             }
 
             child->size = 2 * MIN_KEYS - 1;
-            
+            child->next = rightSibling->next;
+
+            if (rightSibling->next) {
+                rightSibling->next->prev = child;
+            } else {
+                assert(rightSibling == valuesEnd);
+                valuesEnd = child;
+            }
+
         } else {
             child->keys[MIN_KEYS - 1] = std::move(node->keys[idx]);
             child->children[MIN_KEYS] = rightSibling->children[0];
@@ -1066,11 +1010,11 @@ bool BPlusTree<K, V, N>::erase_aux(unsigned depth, Node* node, const K& key) {
 }
 
 template<typename K, typename V, std::size_t N>
-void BPlusTree<K, V, N>::freeNodes(Node* node, unsigned depth) {
+void BPlusTree<K, V, N>::free_nodes(Node* node, unsigned depth) {
     if (depth < height) {
         for (std::size_t i = 0; i <= node->size; i++) {
             Node* child = node->children[i];
-            freeNodes(child, depth + 1);
+            free_nodes(child, depth + 1);
         }
     }
 
@@ -1080,7 +1024,7 @@ void BPlusTree<K, V, N>::freeNodes(Node* node, unsigned depth) {
 
 template<typename K, typename V, std::size_t N>
 void BPlusTree<K, V, N>:: clear() {
-    freeNodes(root, 1);
+    free_nodes(root, 1);
     nodeAllocator.reset();
     elementCount = 0;
     height = 0;
