@@ -1,5 +1,6 @@
 CXX = g++
-CXXFLAGS = -std=c++20 -Wall -Wextra -pedantic -O0 -g -march=native -fsanitize=address -Wno-unused-parameter -Wno-unused-variable
+TESTFLAGS = -std=c++20 -Wall -Wextra -pedantic -O0 -g -march=native
+BENCHFLAGS = -std=c++20 -Wall -Wextra -pedantic -O3 -march=native
 
 TARGET = bench
 
@@ -8,13 +9,16 @@ HEADERS = btree.hpp bplustree.hpp
 
 
 test: test.o
-	$(CXX) $(CXXFLAGS) -o $@ $<
+	$(CXX) $(TESTFLAGS) -o $@ $<
 
 bench: bench.o
-	$(CXX) $(CXXFLAGS) -o $@ $<
+	$(CXX) $(BENCHFLAGS) -o $@ $<
 
-%.o: %.cpp $(HEADERS)
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+test.o: test.cpp $(HEADERS)
+	$(CXX) $(TESTFLAGS) -c $< -o $@
+
+bench.o: bench.cpp $(HEADERS)
+	$(CXX) $(BENCHFLAGS) -c $< -o $@
 
 clean:
 	rm -f test test.o bench bench.o
