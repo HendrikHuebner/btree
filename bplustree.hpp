@@ -639,12 +639,12 @@ void BPlusTree<K, V, N, Alloc>::insert(unsigned depth, Node* node, const K& key,
 
         if (foundInCurrentNode) {
             // replace
-            *node->values[idx - 1] = V(args...);
+            *node->values[idx - 1] = V(std::forward<Args>(args)...);
             keyCount--;
 
         } else {
             V* value = valueAllocator.allocate(1);
-            std::construct_at(value, args...);
+            std::construct_at(value, std::forward<Args>(args)...);
             insertLeaf(node, idx, key, value);  
         }
 
