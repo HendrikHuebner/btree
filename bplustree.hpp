@@ -258,11 +258,11 @@ private:
 
   bool findKeyInNode(Node *, const key_type &, std::size_t &) const;
 
-  void insertLeaf(Node *, std::size_t, key_type &, value_type *);
+  void insertLeaf(Node *, std::size_t, const key_type &, value_type *);
 
   void removeKeyFromLeaf(Node *, std::size_t);
 
-  void insertInner(Node *, std::size_t, key_type &, Node *);
+  void insertInner(Node *, std::size_t, const key_type &, Node *);
 
   void removeInnerKey(Node *, std::size_t);
 
@@ -411,7 +411,7 @@ Iterator &incrementIterator(Iterator &it, bool forward) {
 
 template <typename K, typename V, std::size_t N, typename Alloc>
 void BPlusTree<K, V, N, Alloc>::insertInner(Node *node, std::size_t i,
-                                            K &key, Node *child) {
+                                            const K &key, Node *child) {
   for (std::size_t j = node->size; j > i; j--) {
     node->keys[j] = std::move(node->keys[j - 1]);
     node->children[j + 1] = node->children[j];
@@ -424,7 +424,7 @@ void BPlusTree<K, V, N, Alloc>::insertInner(Node *node, std::size_t i,
 
 template <typename K, typename V, std::size_t N, typename Alloc>
 void BPlusTree<K, V, N, Alloc>::insertLeaf(Node *node, std::size_t i,
-                                           K &key, V *value) {
+                                           const K &key, V *value) {
   for (std::size_t j = node->size; j > i; j--) {
     node->keys[j] = std::move(node->keys[j - 1]);
     node->values[j] = node->values[j - 1];
