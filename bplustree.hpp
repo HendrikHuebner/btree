@@ -461,6 +461,7 @@ void BPlusTree<K, V, N, Alloc>::split(Node *parent, std::size_t idx,
                                       bool childIsLeaf) {
   Node *left = parent->children[idx];
   Node *right = nodeAllocator.allocate(1);
+  std::construct_at(right);
 
   if (childIsLeaf) {
     constexpr std::size_t splitIndex = (N + 1) / 2;
@@ -526,10 +527,11 @@ void BPlusTree<K, V, N, Alloc>::emplace(const K &key, Args &&...args) {
     std::construct_at(value, std::forward<Args>(args)...);
 
     root = nodeAllocator.allocate(1);
+    std::construct_at(root);
+
     root->size = 1;
     root->keys[0] = key;
     root->values[0] = value;
-    root->next = root->prev = nullptr;
     minNode = maxNode = root;
 
     keyCount = 1;
@@ -714,6 +716,7 @@ bool BPlusTree<K, V, N, Alloc>::erase(const K &key) {
   // check if height needs to shrink
   if (root->size == 0) {
     Node *newRoot = root->children[0];
+    std::destroy_at(root);
     nodeAllocator.deallocate(root, 1);
     root = newRoot;
     height--;
@@ -739,6 +742,7 @@ bool BPlusTree<K, V, N, Alloc>::erase(unsigned depth, Node *node,
   if (isLeaf) {
     if (found) {
       // remove from leaf
+      std::destroy_at(node->values[idx - 1]);
       valueAllocator.deallocate(node->values[idx - 1], 1);
       removeKeyFromLeaf(node, idx - 1);
       return true;
@@ -880,6 +884,7 @@ bool BPlusTree<K, V, N, Alloc>::erase(unsigned depth, Node *node,
     }
 
     assert(!isLeaf);
+    std::destroy_at(child);
     nodeAllocator.deallocate(child, 1);
 
     removeInnerKey(node, idx - 1); // remove child
@@ -918,7 +923,7 @@ bool BPlusTree<K, V, N, Alloc>::erase(unsigned depth, Node *node,
       child->size = 2 * MIN_KEYS;
     }
 
-    assert(!isLeaf);
+    std::destroy_at(rightSibling);
     nodeAllocator.deallocate(rightSibling, 1);
 
     // remove right sibling by shifting nodes
@@ -936,8 +941,10 @@ void BPlusTree<K, V, N, Alloc>::freeValues(Node *node) {
 
   Node *next = node->next;
 
-  for (std::size_t i = 0; i < node->size; i++)
+  for (std::size_t i = 0; i < node->size; i++) {
+    std::destroy_at(node->values[i]);
     valueAllocator.deallocate(node->values[i], 1);
+  }
 
   freeValues(next);
 }
