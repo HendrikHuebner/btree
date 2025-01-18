@@ -23,10 +23,10 @@ private:
 
   struct Segment {
     node_type *data;
-    size_t size;
+    std::size_t size;
     Segment *next;
 
-    Segment(size_t segmentSize) : size(segmentSize), next(nullptr) {
+    Segment(std::size_t segmentSize) : size(segmentSize), next(nullptr) {
       data = static_cast<node_type *>(
           ::operator new(segmentSize * sizeof(node_type)));
     }
@@ -34,19 +34,19 @@ private:
     ~Segment() { ::operator delete(data); }
   };
 
-  size_t capacity;
-  size_t allocated;
+  std::size_t capacity;
+  std::size_t allocated;
   Segment *segments;
   FreeNode *freeList;
 
   void expand() {
-    size_t newSegmentSize = capacity * 1.5;
+    std::size_t newSegmentSize = capacity * 1.5;
     auto *newSegment = new Segment(newSegmentSize);
 
     newSegment->next = segments;
     segments = newSegment;
 
-    for (size_t i = 0; i < newSegmentSize; i++) {
+    for (std::size_t i = 0; i < newSegmentSize; i++) {
       FreeNode *node = &newSegment->data[i].node;
       node->next = freeList;
       freeList = node;
@@ -56,7 +56,7 @@ private:
   }
 
 public:
-  explicit SegmentedFreelistAllocator(size_t initialCapacity = 256)
+  explicit SegmentedFreelistAllocator(std::size_t initialCapacity = 256)
       : capacity(initialCapacity), allocated(0), segments(nullptr),
         freeList(nullptr) {
     assert(initialCapacity > 0);
@@ -74,14 +74,14 @@ public:
 
   void reset() {
     freeList = nullptr;
-    for (size_t i = 0; i < segments->size; i++) {
+    for (std::size_t i = 0; i < segments->size; i++) {
       FreeNode *node = &segments->data[i].node;
       node->next = freeList;
       freeList = node;
     }
   }
 
-  [[nodiscard]] value_type *allocate(size_t n) {
+  [[nodiscard]] value_type *allocate(std::size_t n) {
     if (n != 1)
       throw std::bad_alloc();
 
@@ -96,15 +96,20 @@ public:
     return reinterpret_cast<value_type *>(node);
   }
 
-  void deallocate(value_type *ptr, size_t n) {
-    if (n != 1)
-      return;
-
+  void deallocate(value_type *ptr) {
     auto *node = reinterpret_cast<FreeNode *>(ptr);
     node->next = freeList;
     freeList = node;
 
     allocated--;
+  }
+
+  // for std::allocator compliance
+  void deallocate(value_type *ptr, std::size_t n) {
+      if (n != 1)
+        return;
+      else 
+        deallocate(ptr);
   }
 
   bool operator==(const SegmentedFreelistAllocator &other) const noexcept {
@@ -258,11 +263,13 @@ private:
 
   bool findKeyInNode(Node *, const key_type &, std::size_t &) const;
 
-  void insertLeaf(Node *, std::size_t, const key_type &, value_type *);
+  template<typename KeyFwd>
+  void insertLeaf(Node *, std::size_t, KeyFwd &&, value_type *);
 
   void removeKeyFromLeaf(Node *, std::size_t);
 
-  void insertInner(Node *, std::size_t, const key_type &, Node *);
+  template<typename KeyFwd>
+  void insertInner(Node *, std::size_t, KeyFwd &&, Node *);
 
   void removeInnerKey(Node *, std::size_t);
 
@@ -410,27 +417,29 @@ Iterator &incrementIterator(Iterator &it, bool forward) {
 }
 
 template <typename K, typename V, std::size_t N, typename Alloc>
+template<typename KeyFwd>
 void BPlusTree<K, V, N, Alloc>::insertInner(Node *node, std::size_t i,
-                                            const K &key, Node *child) {
+                                            KeyFwd &&key, Node *child) {
   for (std::size_t j = node->size; j > i; j--) {
     node->keys[j] = std::move(node->keys[j - 1]);
     node->children[j + 1] = node->children[j];
   }
 
-  node->keys[i] = key;
+  node->keys[i] = std::forward<KeyFwd>(key);
   node->children[i + 1] = child;
   node->size++;
 }
 
 template <typename K, typename V, std::size_t N, typename Alloc>
+template<typename KeyFwd>
 void BPlusTree<K, V, N, Alloc>::insertLeaf(Node *node, std::size_t i,
-                                           const K &key, V *value) {
+                                           KeyFwd &&key, V *value) {
   for (std::size_t j = node->size; j > i; j--) {
     node->keys[j] = std::move(node->keys[j - 1]);
     node->values[j] = node->values[j - 1];
   }
 
-  node->keys[i] = key;
+  node->keys[i] = std::forward<KeyFwd>(key);
   node->values[i] = value;
   node->size++;
 }
@@ -465,6 +474,7 @@ void BPlusTree<K, V, N, Alloc>::split(Node *parent, std::size_t idx,
 
   if (childIsLeaf) {
     constexpr std::size_t splitIndex = (N + 1) / 2;
+    insertInner(parent, idx, left->keys[splitIndex], right);
 
     for (std::size_t k = 0; k < splitIndex; k++) {
       right->keys[k] = std::move(left->keys[k + splitIndex]);
@@ -479,7 +489,6 @@ void BPlusTree<K, V, N, Alloc>::split(Node *parent, std::size_t idx,
       right->size = splitIndex;
     }
 
-    insertInner(parent, idx, std::move(left->keys[splitIndex]), right);
     left->size = splitIndex;
 
     right->prev = left;
@@ -496,6 +505,7 @@ void BPlusTree<K, V, N, Alloc>::split(Node *parent, std::size_t idx,
   } else {
     // child is inner node
     constexpr std::size_t splitIndex = N / 2;
+    insertInner(parent, idx, left->keys[splitIndex], right);
 
     for (std::size_t k = 0; k < splitIndex; k++) {
       right->keys[k] = std::move(left->keys[k + splitIndex + 1]);
@@ -512,7 +522,6 @@ void BPlusTree<K, V, N, Alloc>::split(Node *parent, std::size_t idx,
       right->size = splitIndex;
     }
 
-    insertInner(parent, idx, std::move(left->keys[splitIndex]), right);
     left->size = splitIndex;
   }
 }
